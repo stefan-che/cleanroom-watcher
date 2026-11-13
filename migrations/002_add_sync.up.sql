@@ -1,0 +1,3 @@
+ALTER TABLE watched_addresses
+    ADD COLUMN balance   DECIMAL(28,8) DEFAULT NULL,
+    ADD COLUMN synced_at DATETIME    DEFAULT NULL;

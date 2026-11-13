@@ -1,0 +1,1 @@
+ALTER TABLE transfer_events MODIFY COLUMN log_index BIGINT NOT NULL DEFAULT 0;

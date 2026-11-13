@@ -1,0 +1,199 @@
+{{define "address_detail.html"}}
+{{template "head" .}}
+{{template "nav" (dict "BasePath" .BasePath "ActivePage" "addresses")}}
+
+<div class="max-w-screen-xl mx-auto px-4 py-6">
+  {{/* Breadcrumb */}}
+  <div class="flex items-center gap-2 text-sm text-slate-400 mb-6">
+    <a href="{{.BasePath}}/addresses" class="hover:text-slate-200">Addresses</a>
+    <span>/</span>
+    <span class="text-slate-200 mono">{{.Watched.Address}}</span>
+  </div>
+
+  {{/* Address info card */}}
+  <div class="card p-6 mb-6">
+    <div class="flex flex-wrap items-start justify-between gap-4 mb-4">
+      <div>
+        <div class="flex items-center gap-3 mb-1">
+          <span class="badge {{networkClass .Network}}">{{.Network}}</span>
+          <span class="badge {{statusClass .Watched.Active .Watched.ExpiresAt}}">
+            {{statusText .Watched.Active .Watched.ExpiresAt}}
+          </span>
+        </div>
+        <div class="mono text-white text-base mt-2 break-all">
+          <a href="https://tronscan.org/#/address/{{.Watched.Address}}" target="_blank" rel="noopener noreferrer" class="text-slate-200 mono hover:text-indigo-400">{{.Watched.Address}}</a>
+        </div>
+        {{if .Watched.Hex40}}
+        <div class="mono text-slate-400 text-sm mt-1">{{.Watched.Hex40}}</div>
+        {{end}}
+      </div>
+      <div class="flex items-center gap-2">
+        <form method="POST" action="{{.BasePath}}/addresses/action">
+          <input type="hidden" name="network" value="{{.Network}}">
+          <input type="hidden" name="address" value="{{.Watched.Address}}">
+          {{if isRunning .Watched.Active .Watched.ExpiresAt}}
+          <input type="hidden" name="action" value="stop">
+          <button type="submit" class="btn" style="background:#7f1d1d;color:#fca5a5;border:1px solid #991b1b;">
+            ⏹ Stop
+          </button>
+          {{else}}
+          <input type="hidden" name="action" value="start">
+          <button type="submit" class="btn" style="background:#14532d;color:#86efac;border:1px solid #166534;">
+            ▶ Start (+7 days)
+          </button>
+          {{end}}
+        </form>
+        <form method="POST" action="{{.BasePath}}/addresses/action"
+              onsubmit="return confirm('Delete address {{.Watched.Address}} from the database? This cannot be undone.')">
+          <input type="hidden" name="network" value="{{.Network}}">
+          <input type="hidden" name="address" value="{{.Watched.Address}}">
+          <input type="hidden" name="action" value="delete">
+          <button type="submit" class="btn" style="background:#1c1917;color:#a8a29e;border:1px solid #44403c;">
+            🗑 Delete
+          </button>
+        </form>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 pt-4 border-t border-slate-700">
+      <div>
+        <div class="text-xs text-slate-500 uppercase tracking-wide mb-1">ID</div>
+        <div class="text-slate-200 text-sm mono">{{.Watched.ID}}</div>
+      </div>
+      <div>
+        <div class="text-xs text-slate-500 uppercase tracking-wide mb-1">Subscribed</div>
+        <div class="text-slate-200 text-sm">{{formatTime .Watched.SubscribedAt}}</div>
+      </div>
+      <div>
+        <div class="text-xs text-slate-500 uppercase tracking-wide mb-1">Expires</div>
+        <div class="text-slate-200 text-sm">{{formatTime .Watched.ExpiresAt}}</div>
+      </div>
+      <div>
+        <div class="text-xs text-slate-500 uppercase tracking-wide mb-1">Last activity</div>
+        <div class="text-slate-200 text-sm">{{formatTimePtr .Watched.LastSeenAt}}</div>
+      </div>
+      <div>
+        <div class="text-xs text-slate-500 uppercase tracking-wide mb-1">Balance</div>
+        <div class="text-slate-200 text-sm mono">{{formatFloat .Watched.Balance}}</div>
+      </div>
+      <div>
+        <div class="text-xs text-slate-500 uppercase tracking-wide mb-1">Synced</div>
+        <div class="text-slate-200 text-sm">{{formatTimePtr .Watched.SyncedAt}}</div>
+      </div>
+      <div>
+        <div class="text-xs text-slate-500 uppercase tracking-wide mb-1">Webhooks</div>
+        <div class="text-slate-200 text-sm">{{len .Watched.Webhooks}}</div>
+      </div>
+      <div>
+        <div class="text-xs text-slate-500 uppercase tracking-wide mb-1">Webhooks disabled</div>
+        <div class="text-slate-200 text-sm">
+          {{if .Watched.DisableWebhooks}}
+          <span class="badge badge-inactive">Yes</span>
+          {{else}}
+          <span class="badge badge-active">No</span>
+          {{end}}
+        </div>
+      </div>
+    </div>
+
+    {{if .Watched.Webhooks}}
+    <div class="mt-4 pt-4 border-t border-slate-700">
+      <div class="text-xs text-slate-500 uppercase tracking-wide mb-2">Webhooks</div>
+      <div class="space-y-1">
+        {{range .Watched.Webhooks}}
+        <div class="flex items-center gap-3 text-sm">
+          <span class="badge {{if .Active}}badge-active{{else}}badge-inactive{{end}}">
+            {{if .Active}}active{{else}}off{{end}}
+          </span>
+          <span class="mono text-slate-300">{{.URL}}</span>
+        </div>
+        {{end}}
+      </div>
+    </div>
+    {{end}}
+  </div>
+
+  {{/* Meta */}}
+  {{$meta := jsonPretty .Watched.Meta}}
+  {{if $meta}}
+  <div class="card p-6 mb-6">
+    <div class="text-xs text-slate-500 uppercase tracking-wide mb-3">Meta</div>
+    <pre class="mono text-slate-300 text-xs leading-relaxed overflow-x-auto whitespace-pre-wrap break-all">{{$meta}}</pre>
+  </div>
+  {{end}}
+
+  {{/* Transactions */}}
+  <div class="flex items-center justify-between mb-4">
+    <h2 class="text-white font-semibold">
+      Transactions
+      <span class="ml-2 text-slate-400 font-normal text-sm">({{.TxTotal}} total)</span>
+    </h2>
+    {{if .Transactions}}
+    <a href="{{.BasePath}}/addresses/{{.Watched.Address}}/export?network={{.Network}}"
+       class="btn btn-ghost text-sm">
+      ⬇ Export CSV
+    </a>
+    {{end}}
+  </div>
+
+  <div class="card overflow-x-auto">
+    <table class="w-full text-sm">
+      <thead>
+        <tr class="border-b border-slate-700 text-slate-400 text-xs uppercase tracking-wide">
+          <th class="text-left px-4 py-3 font-medium">Date</th>
+          <th class="text-left px-4 py-3 font-medium">TxID</th>
+          <th class="text-left px-4 py-3 font-medium">Direction</th>
+          <th class="text-left px-4 py-3 font-medium">Amount</th>
+          <th class="text-left px-4 py-3 font-medium">Currency</th>
+          <th class="text-left px-4 py-3 font-medium">From</th>
+          <th class="text-left px-4 py-3 font-medium">To</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{range .Transactions}}
+        <tr class="border-b border-slate-800 hover:bg-slate-800/50">
+          <td class="px-4 py-3 text-slate-300 whitespace-nowrap">{{formatTime .Ts}}</td>
+          <td class="px-4 py-3">
+            <span class="mono text-indigo-400 text-xs">{{truncate .TxID 16}}…</span>
+          </td>
+          <td class="px-4 py-3">
+            {{if eq .Direction "IN"}}
+            <span class="text-green-400 font-semibold text-xs">▼ IN</span>
+            {{else}}
+            <span class="text-red-400 font-semibold text-xs">▲ OUT</span>
+            {{end}}
+          </td>
+          <td class="px-4 py-3 mono text-slate-100 font-semibold">{{.Amount}}</td>
+          <td class="px-4 py-3 text-slate-300">{{.Currency}}</td>
+          <td class="px-4 py-3 mono text-slate-400 text-xs">
+            <a href="https://tronscan.org/#/address/{{.FromAddress}}" target="_blank" rel="noopener noreferrer" class="hover:text-indigo-400">{{truncate .FromAddress 18}}</a>
+          </td>
+          <td class="px-4 py-3 mono text-slate-400 text-xs">
+            <a href="https://tronscan.org/#/address/{{.ToAddress}}" target="_blank" rel="noopener noreferrer" class="hover:text-indigo-400">{{truncate .ToAddress 18}}</a>
+          </td>
+        </tr>
+        {{else}}
+        <tr>
+          <td colspan="7" class="px-4 py-12 text-center text-slate-500">
+            No transactions found
+          </td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+
+  {{if gt .TxTotalPages 1}}
+  <div class="flex items-center justify-center gap-3 mt-6">
+    {{if gt .TxPage 1}}
+    <a href="?network={{.Network}}&txpage={{sub .TxPage 1}}" class="btn btn-ghost text-sm">← Back</a>
+    {{end}}
+    <span class="text-slate-400 text-sm">Page {{.TxPage}} of {{.TxTotalPages}}</span>
+    {{if lt .TxPage .TxTotalPages}}
+    <a href="?network={{.Network}}&txpage={{add .TxPage 1}}" class="btn btn-ghost text-sm">Next →</a>
+    {{end}}
+  </div>
+  {{end}}
+</div>
+{{template "foot" .}}
+{{end}}

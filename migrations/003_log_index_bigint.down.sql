@@ -1,0 +1,1 @@
+ALTER TABLE transfer_events MODIFY COLUMN log_index SMALLINT NOT NULL DEFAULT 0;

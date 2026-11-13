@@ -1,0 +1,226 @@
+# Production compose for cleanroom-watcher.
+# Run strictly from this directory: docker compose up -d (variables come from ./.env)
+#
+# Differences from the root docker-compose.yml (development stack):
+#   * MySQL and Redis publish no ports outside; they live on the internal network;
+#   * nginx sits in front of the scanner, and only port 80 is exposed
+#     (TLS is terminated by the front proxy, see README);
+#   * the scanner's own port 8080 binds to loopback (for the local tg bot);
+#   * config.json is NOT baked into the image but mounted read-only from ./config.json;
+#   * the binary is built from the repository sources on make build/deploy;
+#   * every service has resource limits, log rotation and a healthcheck.
+
+x-logging: &default-logging
+    driver: json-file
+    options:
+        max-size: "10m"
+        max-file: "5"
+
+services:
+    listener-scanner:
+        container_name: ${COMPOSE_PROJECT_NAME:-cleanroom-watcher}-scanner
+        build:
+            # Context is the repository root: the image needs go.mod, cmd/, internal/, migrations/.
+            context: ${APP_PATH:-../..}
+            dockerfile: docker/prod/images/scanner/Dockerfile
+            args:
+                # The date is set by deploy.sh and make build, so the apk upgrade layer
+                # is rebuilt once a day instead of living in the cache forever.
+                CACHEBUST: ${CACHEBUST:-}
+        image: ${SCANNER_IMAGE:-cleanroom-watcher-scanner}:prod
+        restart: unless-stopped
+        # The process runs as an unprivileged host user
+        # so files in ./logs/scanner are not owned by root.
+        user: "${PUID:-1000}:${PGID:-1000}"
+        environment:
+            CONFIG_FILE: /app/config.json
+            TZ: '${TZ:-UTC}'
+            # The Go runtime sets GOMAXPROCS = number of HOST cores (sched_getaffinity
+            # does not see the --cpus CFS quota), so the scheduler starts more
+            # executor threads than SCANNER_CPUS actually provides, and the process
+            # gets throttled by the cgroup. Explicitly cap it at the same value as
+            # the container limit. SCANNER_CPUS must be an integer: GOMAXPROCS
+            # does not accept fractional values.
+            GOMAXPROCS: '${SCANNER_CPUS:-2}'
+        volumes:
+            # Read-only config: the application must not be able to rewrite its own secrets.
+            - ${CONFIG_PATH:-./config.json}:/app/config.json:ro
+            # The application writes logs/YYYY-MM-DD.log itself; the admin panel reads them.
+            - ./logs/scanner:/app/logs:rw
+        ports:
+            # Loopback only by default: the service is exposed outside through nginx.
+            # Need access from another machine? Route it through nginx instead of changing the binding.
+            - "${SCANNER_HOST_BIND:-127.0.0.1:8080}:8080"
+        depends_on:
+            listener-mysql:
+                condition: service_healthy
+            listener-redis:
+                condition: service_healthy
+        networks:
+            - backend
+            - egress
+        healthcheck:
+            test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/health >/dev/null || exit 1"]
+            interval: 30s
+            timeout: 5s
+            retries: 3
+            start_period: 40s
+        # The scanner holds open HTTP requests to nodes; give it time to finish the tick.
+        stop_grace_period: 30s
+        deploy:
+            resources:
+                limits:
+                    cpus: '${SCANNER_CPUS:-2}'
+                    memory: ${SCANNER_MEMORY:-1G}
+        logging: *default-logging
+
+    listener-nginx:
+        container_name: ${COMPOSE_PROJECT_NAME:-cleanroom-watcher}-nginx
+        build:
+            context: .
+            dockerfile: ./images/nginx/Dockerfile
+            args:
+                CACHEBUST: ${CACHEBUST:-}
+        image: ${NGINX_IMAGE:-cleanroom-watcher-nginx}:prod
+        restart: unless-stopped
+        environment:
+            APP_DOMAIN: '${APP_DOMAIN}'
+            SCANNER_UPSTREAM: 'listener-scanner:8080'
+            CLIENT_MAX_BODY_SIZE: '${CLIENT_MAX_BODY_SIZE:-1m}'
+            # ADMIN_PATH must match admin.path in config.json.
+            ADMIN_PATH: '${ADMIN_PATH}'
+            NGINX_ENVSUBST_FILTER: '^(APP_DOMAIN|SCANNER_UPSTREAM|CLIENT_MAX_BODY_SIZE|ADMIN_PATH)$$'
+        volumes:
+            - ./logs/nginx:/var/log/nginx
+            # Who may reach the admin panel and /health. Editable without rebuilding the image.
+            - ./images/nginx/access:/etc/nginx/access:ro
+            # Front proxy subnets trusted for X-Forwarded-For.
+            - ./images/nginx/geo:/etc/nginx/geo:ro
+        ports:
+            - "${HTTP_PORT:-80}:80"
+        depends_on:
+            - listener-scanner
+        networks:
+            - frontend
+            - backend
+        healthcheck:
+            # The alpine image has no curl; the healthcheck uses busybox wget.
+            test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/healthz"]
+            interval: 30s
+            timeout: 5s
+            retries: 3
+            start_period: 20s
+        deploy:
+            resources:
+                limits:
+                    cpus: '${NGINX_CPUS:-1}'
+                    memory: ${NGINX_MEMORY:-256M}
+        logging: *default-logging
+
+    listener-mysql:
+        container_name: ${COMPOSE_PROJECT_NAME:-cleanroom-watcher}-mysql
+        # 8.4 LTS (images/mysql/Dockerfile), not 8.0.46: the 8.0 branch is end-of-life,
+        # no new builds will ship, and CVEs only pile up in the image. The
+        # 8.0 → 8.4 upgrade is in-place: the data directory is upgraded on first start,
+        # but it can NOT be rolled back to 8.0 afterwards.
+        build:
+            context: .
+            dockerfile: ./images/mysql/Dockerfile
+            args:
+                CACHEBUST: ${CACHEBUST:-}
+        image: ${MYSQL_IMAGE:-cleanroom-watcher-mysql}:prod
+        restart: unless-stopped
+        ports:
+            # Only for manual access from the host (dumps, mysql client).
+            # The scanner does not need it: it reaches listener-mysql by name inside the
+            # backend network. If this access is not needed, remove this block
+            # and the dbaccess network below.
+            #
+            # The 127.0.0.1 prefix is mandatory: without it docker binds 0.0.0.0
+            # and the database becomes visible to the whole subnet, bypassing ufw: docker
+            # rules live in the DOCKER chain, which INPUT never reaches.
+            - "${MYSQL_HOST_BIND:-127.0.0.1:3306}:3306"
+        command:
+            # In 8.4 the mysql_native_password plugin is disabled by default, and all
+            # accounts created on 8.0 (root and the scanner user) use it.
+            # Without the flag, login fails with ERROR 1524 Plugin not loaded,
+            # and the healthcheck with it. New accounts get
+            # caching_sha2_password; the Go driver supports both.
+            #
+            # The flag can be removed once all accounts are migrated:
+            #   SELECT user, host, plugin FROM mysql.user;
+            #   ALTER USER '<user>'@'<host>' IDENTIFIED WITH caching_sha2_password BY '<password>';
+            - --mysql-native-password=ON
+        environment:
+            MYSQL_DATABASE: '${DB_DATABASE}'
+            MYSQL_USER: '${DB_USERNAME}'
+            MYSQL_PASSWORD: '${DB_PASSWORD}'
+            MYSQL_ROOT_PASSWORD: '${DB_ROOT_PASSWORD}'
+            TZ: '${TZ:-UTC}'
+        volumes:
+            - ${MYSQL_DATA_PATH:-./data/mysql}:/var/lib/mysql
+            - ./images/mysql/my.cnf:/etc/mysql/conf.d/zz-prod.cnf:ro
+            - ./backups:/backups
+        networks:
+            - backend
+            # Only for publishing the port to the host, see dbaccess below.
+            - dbaccess
+        healthcheck:
+            # CMD-SHELL, not CMD: without a shell the variable is not expanded.
+            test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u root -p\"$$MYSQL_ROOT_PASSWORD\" --silent"]
+            interval: 15s
+            timeout: 10s
+            retries: 10
+            start_period: 60s
+        deploy:
+            resources:
+                limits:
+                    cpus: '${MYSQL_CPUS:-2}'
+                    memory: ${MYSQL_MEMORY:-1G}
+        logging: *default-logging
+
+    listener-redis:
+        container_name: ${COMPOSE_PROJECT_NAME:-cleanroom-watcher}-redis
+        image: redis:7.2-alpine
+        restart: unless-stopped
+        command: ["redis-server", "/usr/local/etc/redis/redis.conf", "--requirepass", "${REDIS_PASSWORD}"]
+        environment:
+            REDIS_PASSWORD: '${REDIS_PASSWORD}'
+        volumes:
+            - ./images/redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
+            - ${REDIS_DATA_PATH:-./data/redis}:/data
+        networks:
+            - backend
+        healthcheck:
+            test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" ping | grep -q PONG"]
+            interval: 30s
+            timeout: 5s
+            retries: 3
+            start_period: 10s
+        deploy:
+            resources:
+                limits:
+                    cpus: '${REDIS_CPUS:-1}'
+                    memory: ${REDIS_MEMORY:-512M}
+        logging: *default-logging
+
+networks:
+    # Public network: only nginx faces outside.
+    frontend:
+        driver: bridge
+    # Internal network with no route to the internet: mysql, redis, nginx<->scanner.
+    backend:
+        driver: bridge
+        internal: true
+    # Outbound access for the scanner: TRON nodes, Blockchair, TronScan, webhooks.
+    egress:
+        driver: bridge
+    # Needed only together with the mysql port published on loopback: backend
+    # is declared internal, and docker does not set up port publishing on isolated
+    # networks: the container runs, but 127.0.0.1:3306 on the host does not listen.
+    # This network exposes nothing outside: the port is bound to loopback, and NAT
+    # for outbound traffic is disabled, so mysql does not get internet access.
+    dbaccess:
+        driver: bridge
+        driver_opts:
+            com.docker.network.bridge.enable_ip_masquerade: "false"

@@ -1,0 +1,115 @@
+{
+  "_comment": "Production config template for the docker stack. Copy to config.json (chmod 600) and fill in. The one important difference from the root config.json.example: db_dsn and redis_addr point to service names inside the docker network, not to 127.0.0.1.",
+
+  "tron_nodes": [
+    { "url": "http://tron-node.example.com:8090", "api_key": "" },
+    { "url": "https://api.trongrid.io", "api_key": "TRONGRID_KEY" }
+  ],
+  "usdt_contract": "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t",
+
+  "db_dsn": "tron:PASSWORD_FROM_DB_PASSWORD@tcp(listener-mysql:3306)/tron_scanner?parseTime=true&loc=UTC",
+
+  "redis_addr": "listener-redis:6379",
+  "redis_password": "PASSWORD_FROM_REDIS_PASSWORD",
+  "redis_db": 0,
+
+  "scanner": {
+    "_comment": "start_block matters only on the first run with an empty DB: after that the position comes from scanner_state.last_block. Set a block number close to the current one, otherwise the scanner starts from the network's first block.",
+    "start_block": 82101450,
+    "confirmations": 3,
+    "scan_step": 10,
+    "scan_workers": 10,
+    "scan_interval_ms": 2000,
+    "watch_default_ttl_hours": 240,
+    "min_trx_amount": 10,
+    "min_usdt_amount": 1
+  },
+
+  "api": {
+    "listen": ":8080",
+    "api_keys": ["BOT_KEY: openssl rand -hex 32"]
+  },
+
+  "_comment_webhook_concurrency": "Number of concurrent webhook deliveries (default 10). Raise it together with SCANNER_CPUS, otherwise the workers just compete for the same CPU quota.",
+  "webhook_concurrency": 10,
+
+  "blockchains": [
+    {
+      "id": "tron",
+      "name": "TRON",
+      "source": "tron_node",
+      "enabled": true,
+      "native_currency": "TRX",
+      "decimals": 1000000,
+      "explorer_tx_url": "https://tronscan.org/#/transaction"
+    },
+    {
+      "id": "bitcoin",
+      "name": "Bitcoin",
+      "source": "blockchair",
+      "enabled": true,
+      "native_currency": "BTC",
+      "decimals": 100000000,
+      "explorer_tx_url": "https://mempool.space/tx",
+      "poll_interval_sec": 3600
+    },
+    {
+      "id": "ethereum",
+      "name": "Ethereum",
+      "source": "blockchair",
+      "enabled": true,
+      "native_currency": "ETH",
+      "decimals": 1000000000000000000,
+      "explorer_tx_url": "https://etherscan.io/tx",
+      "poll_interval_sec": 3600,
+      "erc20_tokens": [
+        { "contract": "0xdac17f958d2ee523a2206206994597c13d831ec7", "symbol": "USDT", "decimals": 6 },
+        { "contract": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48", "symbol": "USDC", "decimals": 6 }
+      ]
+    },
+    {
+      "id": "polygon",
+      "name": "Polygon",
+      "source": "blockchair",
+      "enabled": true,
+      "native_currency": "MATIC",
+      "decimals": 1000000000000000000,
+      "explorer_tx_url": "https://polygonscan.com/tx",
+      "poll_interval_sec": 3600
+    },
+    {
+      "id": "bnb",
+      "name": "BNB Smart Chain",
+      "source": "blockchair",
+      "enabled": true,
+      "native_currency": "BNB",
+      "decimals": 1000000000000000000,
+      "explorer_tx_url": "https://bscscan.com/tx",
+      "poll_interval_sec": 3600
+    }
+  ],
+
+  "blockchair": {
+    "_comment": "work_hours limits polling to working hours (UTC), directly saving API quota. Cost per cycle: addresses × (1 + number of erc20_tokens) requests per network.",
+    "api_key": "BLOCKCHAIR_KEY",
+    "poll_interval_sec": 3600,
+    "request_delay_ms": 1200,
+    "work_hours": {
+      "enabled": true,
+      "start_utc": "06:00",
+      "end_utc": "17:00",
+      "work_days": [1, 2, 3, 4, 5]
+    }
+  },
+
+  "admin": {
+    "_comment": "path MUST match ADMIN_PATH in .env; nginx routes the admin panel by it. session_secret: openssl rand -hex 32.",
+    "path": "ADMIN_PATH_VALUE_FROM_ENV",
+    "username": "admin",
+    "password": "STRONG_PASSWORD",
+    "session_secret": ""
+  },
+
+  "_webhooks_comment": "Global webhooks for all events. Usually an empty list: the bot registers its per-address webhooks via POST /api/addresses/{address}/webhooks.",
+  "webhooks": []
+}

@@ -1,0 +1,124 @@
+# Scanner virtual host. ${APP_DOMAIN}, ${SCANNER_UPSTREAM}, ${ADMIN_PATH} and
+# ${CLIENT_MAX_BODY_SIZE} are substituted by envsubst when the container starts.
+#
+# No TLS here: only port 80 is exposed, https is terminated by the front proxy.
+# Its subnet must be listed in /etc/nginx/geo/trusted-proxies.inc, otherwise
+# rate limiting and IP lists will treat all clients as one address.
+
+upstream scanner {
+    server ${SCANNER_UPSTREAM};
+    keepalive 16;
+}
+
+# --- Requests with a foreign Host: close the connection without reaching the app ---
+server {
+    listen      80 default_server;
+    listen      [::]:80 default_server;
+    server_name _;
+
+    # Liveness check for the docker healthcheck: it hits 127.0.0.1,
+    # so it lands in exactly this server block.
+    location = /healthz {
+        access_log off;
+        add_header Content-Type text/plain;
+        return 200 "ok\n";
+    }
+
+    location / {
+        return 444;
+    }
+}
+
+# --- HTTP: scanner ---
+server {
+    listen      80;
+    listen      [::]:80;
+    server_name ${APP_DOMAIN};
+
+    charset utf-8;
+    client_max_body_size ${CLIENT_MAX_BODY_SIZE};
+
+    access_log /var/log/nginx/access.log main buffer=64k flush=5s;
+    error_log  /var/log/nginx/error.log warn;
+
+    # --- Security headers ---
+    # HSTS is not set: traffic reaches us over http, and the header must be
+    # set by whoever terminates TLS (the front proxy).
+    add_header X-Content-Type-Options    "nosniff" always;
+    add_header X-Frame-Options           "SAMEORIGIN" always;
+    add_header Referrer-Policy           "strict-origin-when-cross-origin" always;
+    add_header Permissions-Policy        "geolocation=(), microphone=(), camera=()" always;
+
+    limit_conn perip 50;
+
+    # --- Liveness of nginx itself (for the docker healthcheck) ---
+    location = /healthz {
+        access_log off;
+        add_header Content-Type text/plain;
+        return 200 "ok\n";
+    }
+
+    # --- Site icon ---
+    # Browsers request /favicon.ico at the domain root. Without this block the request
+    # would fall into `location /` and get 444, which the front proxy would show
+    # the client as 502. The admin panel has its own icon under /assets/.
+    location = /favicon.ico {
+        access_log off;
+        log_not_found off;
+        return 204;
+    }
+
+    # --- Scanner API ---
+    # Auth is the X-API-Key header, checked by the application itself.
+    # zone=sync applies only to ?sync=true requests: each such
+    # request goes to Blockchair and costs quota.
+    location ^~ /api/ {
+        limit_req zone=api  burst=60 nodelay;
+        limit_req zone=sync burst=5;
+
+        include     /etc/nginx/snippets/proxy.inc;
+        proxy_pass  http://scanner;
+    }
+
+    # --- Health ---
+    # Endpoint without auth: shows scanner lag and the webhook
+    # queue. Who can reach it: /etc/nginx/access/health-allow.inc.
+    location = /health {
+        include /etc/nginx/access/health-allow.inc;
+
+        limit_req zone=api burst=10 nodelay;
+        access_log off;
+
+        include     /etc/nginx/snippets/proxy.inc;
+        proxy_pass  http://scanner;
+    }
+
+    # --- Admin panel ---
+    # Login form handled separately: 10 attempts per minute against password brute force.
+    location = /${ADMIN_PATH}/login {
+        include /etc/nginx/access/admin-allow.inc;
+
+        limit_req zone=login burst=5 nodelay;
+
+        include     /etc/nginx/snippets/proxy.inc;
+        proxy_pass  http://scanner;
+    }
+
+    location ^~ /${ADMIN_PATH}/ {
+        include /etc/nginx/access/admin-allow.inc;
+
+        limit_req zone=api burst=30 nodelay;
+
+        include     /etc/nginx/snippets/proxy.inc;
+        proxy_pass  http://scanner;
+    }
+
+    # --- Everything else ---
+    # Only known paths are served. URL scanning, attempts to
+    # guess the admin path and any unrelated request are closed at the
+    # connection level and never reach the Go application.
+    location / {
+        access_log off;
+        return 444;
+    }
+}

@@ -1,0 +1,100 @@
+{{define "addresses.html"}}
+{{template "head" .}}
+{{template "nav" (dict "BasePath" .BasePath "ActivePage" "addresses")}}
+
+<div class="max-w-screen-xl mx-auto px-4 py-6">
+  {{/* Filters */}}
+  <form method="GET" class="card p-4 mb-6 flex flex-wrap items-end gap-3">
+    <div class="flex-1 min-w-48">
+      <label class="block text-xs text-slate-400 mb-1">Search by address</label>
+      <input type="text" name="search" value="{{.Search}}"
+             placeholder="Enter an address or part of it…" class="w-full">
+    </div>
+    <div>
+      <label class="block text-xs text-slate-400 mb-1">Network</label>
+      <select name="network" class="h-9">
+        <option value=""       {{if eq .Network ""       }}selected{{end}}>All networks</option>
+        <option value="tron"   {{if eq .Network "tron"   }}selected{{end}}>TRON</option>
+        <option value="bitcoin"{{if eq .Network "bitcoin"}}selected{{end}}>Bitcoin</option>
+        <option value="bnb"    {{if eq .Network "bnb"    }}selected{{end}}>BNB Chain</option>
+        <option value="ethereum"{{if eq .Network "ethereum"}}selected{{end}}>Ethereum</option>
+      </select>
+    </div>
+    <div class="flex items-center gap-2 self-end pb-1">
+      <label class="flex items-center gap-1.5 text-sm text-slate-300 cursor-pointer select-none">
+        <input type="checkbox" name="show" value="all" {{if .ShowAll}}checked{{end}}>
+        Show all
+      </label>
+    </div>
+    <button type="submit" class="btn btn-primary">Search</button>
+    <a href="{{.BasePath}}/addresses" class="btn btn-ghost">Reset</a>
+  </form>
+
+  <div class="flex items-center justify-between mb-4">
+    <h2 class="text-white font-semibold">
+      Addresses
+      <span class="ml-2 text-slate-400 font-normal text-sm">({{.Total}} total)</span>
+    </h2>
+  </div>
+
+  <div class="card overflow-x-auto">
+    <table class="w-full text-sm">
+      <thead>
+        <tr class="border-b border-slate-700 text-slate-400 text-xs uppercase tracking-wide">
+          <th class="text-left px-4 py-3 font-medium">Address</th>
+          <th class="text-left px-4 py-3 font-medium">Network</th>
+          <th class="text-left px-4 py-3 font-medium">Status</th>
+          <th class="text-left px-4 py-3 font-medium">Subscribed</th>
+          <th class="text-left px-4 py-3 font-medium">Expires</th>
+          <th class="text-right px-4 py-3 font-medium">Transactions</th>
+          <th class="text-right px-4 py-3 font-medium">Webhooks</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{range .Addresses}}
+        <tr class="border-b border-slate-800 trow"
+            onclick="location.href='{{$.BasePath}}/addresses/{{.Address}}?network={{.Network}}'">
+          <td class="px-4 py-3">
+            <div class="mono text-slate-100">{{.Address}}</div>
+            {{if .Hex40}}
+            <div class="mono text-slate-500 text-xs mt-0.5">{{truncate .Hex40 22}}</div>
+            {{end}}
+          </td>
+          <td class="px-4 py-3">
+            <span class="badge {{networkClass .Network}}">{{.Network}}</span>
+          </td>
+          <td class="px-4 py-3">
+            <span class="badge {{statusClass .Active .ExpiresAt}}">{{statusText .Active .ExpiresAt}}</span>
+          </td>
+          <td class="px-4 py-3 text-slate-300 whitespace-nowrap">{{formatTime .SubscribedAt}}</td>
+          <td class="px-4 py-3 text-slate-300 whitespace-nowrap">{{formatTime .ExpiresAt}}</td>
+          <td class="px-4 py-3 text-right font-mono text-slate-300">{{.TxCount}}</td>
+          <td class="px-4 py-3 text-right font-mono text-slate-300">{{.WebhooksCount}}</td>
+        </tr>
+        {{else}}
+        <tr>
+          <td colspan="7" class="px-4 py-12 text-center text-slate-500">
+            No addresses found
+          </td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+
+  {{if gt .TotalPages 1}}
+  <div class="flex items-center justify-center gap-3 mt-6">
+    {{if gt .CurPage 1}}
+    <a href="?page={{sub .CurPage 1}}&search={{.Search}}&network={{.Network}}{{if .ShowAll}}&show=all{{end}}"
+       class="btn btn-ghost text-sm">← Back</a>
+    {{end}}
+    <span class="text-slate-400 text-sm">Page {{.CurPage}} of {{.TotalPages}}</span>
+    {{if lt .CurPage .TotalPages}}
+    <a href="?page={{add .CurPage 1}}&search={{.Search}}&network={{.Network}}{{if .ShowAll}}&show=all{{end}}"
+       class="btn btn-ghost text-sm">Next →</a>
+    {{end}}
+  </div>
+  {{end}}
+</div>
+{{template "foot" .}}
+{{end}}

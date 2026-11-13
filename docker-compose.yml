@@ -1,0 +1,69 @@
+# Local / single-host stack: scanner + MySQL + Redis.
+#   cp config.docker.json.example config.json   # then edit, see README "Quick start"
+#   make network && make up
+#
+# * MySQL and Redis are NOT published to the host (no clash with other stacks on 3306/6379);
+#   use `make db-shell`. The scanner API is published on 127.0.0.1:${LISTENER_HTTP_PORT:-8081}.
+# * Shared network `processing-net` (external, created by `make network` here or in
+#   tron-cleanroom/docker): tron-cleanroom calls this service as http://cleanroom-watcher:8080 and
+#   the scanner delivers webhooks to http://tron-cleanroom/webhook/wallet-listener.
+# * DB passwords: change the defaults via LISTENER_DB_* (shell env or a .env file next to this
+#   file) and keep db_dsn in config.json in sync.
+services:
+  mysql:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${LISTENER_DB_ROOT_PASSWORD:-change-me-root}
+      MYSQL_DATABASE: tron_scanner
+      MYSQL_USER: tron
+      MYSQL_PASSWORD: ${LISTENER_DB_PASSWORD:-change-me}
+    volumes:
+      - mysql_data:/var/lib/mysql
+    command: >
+      --mysql-native-password=ON
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u tron -p\"$$MYSQL_PASSWORD\" --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7.2-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--notify-keyspace-events", "Ex", "--save", ""]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  scanner:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      CONFIG_FILE: /app/config.json
+    ports:
+      - "127.0.0.1:${LISTENER_HTTP_PORT:-8081}:8080"
+    volumes:
+      - ./config.json:/app/config.json:ro
+    networks:
+      default:
+      processing-net:
+        aliases:
+          - cleanroom-watcher
+
+volumes:
+  mysql_data:
+
+networks:
+  processing-net:
+    external: true
+    name: ${SHARED_NETWORK:-processing-net}

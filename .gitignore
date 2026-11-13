@@ -1,0 +1,17 @@
+# Configs with secrets: never commit (use config.json.example as a template)
+config.json
+deploy/dev/config.json
+deploy/prod/config.json
+
+# IDE
+.idea/
+.DS_Store
+
+# Built binaries, repository root only.
+# The leading slash matters: without it, the rule "scanner" ignores ANY path with that
+# name, including docker/prod/images/scanner/ and docker/prod/logs/scanner/.
+/scanner
+/debug-blockchair
+
+# Logs from local runs
+/logs/

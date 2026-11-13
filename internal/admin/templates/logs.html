@@ -1,0 +1,87 @@
+{{define "logs.html"}}
+{{template "head" .}}
+{{template "nav" (dict "BasePath" .BasePath "ActivePage" "logs")}}
+
+<div class="max-w-screen-xl mx-auto px-4 py-6">
+  {{/* Controls */}}
+  <form method="GET" class="card p-4 mb-4 flex flex-wrap items-end gap-3">
+    <div>
+      <label class="block text-xs text-slate-400 mb-1">Date</label>
+      <select name="date" class="h-9">
+        {{range .AvailableDates}}
+        <option value="{{.}}" {{if eq . $.SelectedDate}}selected{{end}}>{{.}}</option>
+        {{else}}
+        <option value="{{.SelectedDate}}">{{.SelectedDate}}</option>
+        {{end}}
+      </select>
+    </div>
+    <div>
+      <label class="block text-xs text-slate-400 mb-1">Last lines</label>
+      <select name="tail" class="h-9">
+        <option value="100"  {{if eq .Tail 100  }}selected{{end}}>100</option>
+        <option value="500"  {{if eq .Tail 500  }}selected{{end}}>500</option>
+        <option value="1000" {{if eq .Tail 1000 }}selected{{end}}>1 000</option>
+        <option value="5000" {{if eq .Tail 5000 }}selected{{end}}>5 000</option>
+        <option value="10000"{{if eq .Tail 10000}}selected{{end}}>10 000</option>
+      </select>
+    </div>
+    <button type="submit" class="btn btn-primary">Load</button>
+    <button type="button" onclick="location.reload()" class="btn btn-ghost">Refresh</button>
+
+    <div class="ml-auto flex items-end gap-3">
+      <label class="flex items-center gap-1.5 text-sm text-slate-300 cursor-pointer select-none self-end pb-1">
+        <input type="checkbox" id="autoRefresh" style="width:1rem;height:1rem;accent-color:#6366f1">
+        Auto-refresh (30 s)
+      </label>
+    </div>
+  </form>
+
+  {{/* Log meta */}}
+  <div class="flex items-center justify-between mb-2 px-1">
+    <div class="text-sm text-slate-400">
+      <span class="text-slate-300">{{.SelectedDate}}.log</span>
+      &nbsp;·&nbsp; {{.FileSize}}
+      &nbsp;·&nbsp; {{len .Lines}} lines shown
+    </div>
+    <button onclick="scrollToBottom()" class="btn btn-ghost text-xs">↓ To bottom</button>
+  </div>
+
+  {{/* Log output */}}
+  <div class="card overflow-auto" style="max-height:72vh;" id="logBox">
+    <pre class="mono text-xs p-4 leading-relaxed" id="logPre">{{range .Lines}}<span class="log-line log-{{.Level}}">{{.Raw}}
+</span>{{else}}<span class="text-slate-600">File is empty or not found.</span>{{end}}</pre>
+  </div>
+</div>
+
+<script>
+// Colorize log levels
+document.querySelectorAll('.log-line').forEach(el => {
+  const line = el.textContent;
+  if      (/level=ERROR/.test(line)) el.style.color = '#f87171';
+  else if (/level=WARN/.test(line))  el.style.color = '#fbbf24';
+  else if (/level=DEBUG/.test(line)) el.style.color = '#475569';
+  else                               el.style.color = '#94a3b8';
+});
+
+function scrollToBottom() {
+  const box = document.getElementById('logBox');
+  box.scrollTop = box.scrollHeight;
+}
+
+// Auto-scroll to bottom on load
+scrollToBottom();
+
+// Auto-refresh toggle
+let timer = null;
+document.getElementById('autoRefresh').addEventListener('change', function() {
+  if (this.checked) {
+    timer = setInterval(() => location.reload(), 30000);
+  } else {
+    clearInterval(timer);
+    timer = null;
+  }
+});
+</script>
+
+{{template "foot" .}}
+{{end}}

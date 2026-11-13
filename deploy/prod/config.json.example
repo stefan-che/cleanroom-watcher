@@ -1,0 +1,94 @@
+{
+  "tron_nodes": [
+    { "url": "http://YOUR_PRIVATE_NODE:8090", "api_key": "" },
+    { "url": "https://api.trongrid.io",       "api_key": "PROD_TRONGRID_KEY" }
+  ],
+  "usdt_contract": "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t",
+
+  "db_dsn": "tron:PROD_DB_PASS@tcp(127.0.0.1:3306)/tron_scanner?parseTime=true&loc=UTC",
+
+  "redis_addr": "localhost:6379",
+  "redis_password": "",
+  "redis_db": 0,
+
+  "scanner": {
+    "start_block": 0,
+    "confirmations": 20,
+    "scan_step": 10,
+    "scan_interval_ms": 2000,
+    "watch_default_ttl_hours": 72
+  },
+
+  "api": {
+    "listen": ":8080",
+    "api_keys": ["PROD_API_KEY"]
+  },
+
+  "blockchains": [
+    {
+      "id": "tron",
+      "name": "TRON",
+      "source": "tron_node",
+      "enabled": true,
+      "native_currency": "TRX",
+      "decimals": 1000000,
+      "explorer_tx_url": "https://tronscan.org/#/transaction"
+    },
+    {
+      "id": "ethereum",
+      "name": "Ethereum",
+      "source": "blockchair",
+      "enabled": true,
+      "native_currency": "ETH",
+      "decimals": 1000000000000000000,
+      "explorer_tx_url": "https://etherscan.io/tx",
+      "poll_interval_sec": 120
+    },
+    {
+      "id": "bitcoin",
+      "name": "Bitcoin",
+      "source": "blockchair",
+      "enabled": true,
+      "native_currency": "BTC",
+      "decimals": 100000000,
+      "explorer_tx_url": "https://mempool.space/tx",
+      "poll_interval_sec": 600
+    },
+    {
+      "id": "bnb",
+      "name": "BNB Smart Chain",
+      "source": "blockchair",
+      "enabled": true,
+      "native_currency": "BNB",
+      "decimals": 1000000000000000000,
+      "explorer_tx_url": "https://bscscan.com/tx",
+      "poll_interval_sec": 120
+    },
+    {
+      "id": "polygon",
+      "name": "Polygon",
+      "source": "blockchair",
+      "enabled": false,
+      "native_currency": "MATIC",
+      "decimals": 1000000000000000000,
+      "explorer_tx_url": "https://polygonscan.com/tx",
+      "poll_interval_sec": 120
+    }
+  ],
+
+  "blockchair": {
+    "api_key": "PROD_BLOCKCHAIR_KEY",
+    "poll_interval_sec": 300,
+    "request_delay_ms": 1200
+  },
+
+  "webhooks": [
+    {
+      "name": "prod-backend",
+      "url": "https://your-backend.com/webhook",
+      "secret": "PROD_WEBHOOK_SECRET",
+      "timeout_sec": 10,
+      "max_retries": 3
+    }
+  ]
+}

@@ -1,0 +1,27 @@
+# Image build context. Without this file, .git and already built binaries (~40 MB)
+# are sent to the daemon and the build gets noticeably slower.
+.git
+.gitignore
+.idea
+.claude
+.DS_Store
+**/.DS_Store
+
+# Prebuilt binaries: the image rebuilds them from source.
+/scanner
+/debug-blockchair
+
+# Logs and working directories
+/logs
+/diffd
+/docs
+/deploy
+/docker/prod/data
+/docker/prod/logs
+/docker/prod/backups
+/docker/prod/.env
+/docker/prod/config.json
+*.log
+
+# Runtime config with secrets: mounted by docker-compose.yml, never sent to the build.
+/config.json
